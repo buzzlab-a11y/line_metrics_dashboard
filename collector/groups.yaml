@@ -1,0 +1,48 @@
+# UTAGE 配信アカウントのグループ所属定義
+#
+# 重要: UTAGE API はグループ情報を返さない。
+# UTAGE 管理画面のグループ分けを手動でここに反映する。
+#
+# Claude Code から UTAGE を操作する際の有効グループ（Kindle講座スコープ）:
+#   - bazz_lab           : Bazz Lab（本体）
+#   - buzz_lab_kouzasei  : Buzz Lab_講座生
+#   - kindle_kouza       : Kindle講座
+#
+# 上記3グループ以外の配信アカウント・ファネル・ページは操作対象外。
+# 最終確認日: 2026-05-20（UTAGE 管理画面スクリーンショットより）
+
+scope: kindle
+
+groups:
+  bazz_lab:
+    description: Bazz Lab（本体）
+    suffix: Bazz Lab
+    account_ids:
+      - is4gquIds1Lv  # なまけ社長
+      - jqX7tAQE581N  # おと | インスタ×AIで気ままに過ごす
+      - LCts9DYCkDxL  # アフィリエイトニキ
+      - Vwl9WgYHS7d8  # アフィリエイトニキ|プレゼント配布用
+      - L8Wjfjt4oQrr  # ムク博士｜案内用
+      - RKc41vP704Ag  # おまる｜Threads×インスタを攻略
+      - OcPAWs5HZYvF  # おまる｜プレゼント受け取り用
+      - ZYufeFQ2qohJ  # 個別サポートLINE_Buzz Lab
+      - JUNgaSCmnXRv  # Bazz Lab講座生サポート用
+      - TiasRrX7PmAW  # ともか
+      - 4L0zcPFqMni7  # なな
+      - oDfkl55X7Rr7  # スキルくん/業務効率ガチ勢
+      - MTqYVn4ai5r5  # スバル@Kindle博士
+      - tfmhg1cUKMRs  # 辛口ふわわ｜案内用
+      - JFxp3h8tIYlD  # おリュウ＠4児パパ×資産づくり
+
+  buzz_lab_kouzasei:
+    description: Buzz Lab_講座生
+    suffix: Buzz Lab_講座生
+    account_ids:
+      - vCIfPjnz1gQu  # イチ🐰｜AI漫画×Kindle資産化
+
+  kindle_kouza:
+    description: Kindle講座
+    suffix: Kindle講座
+    account_ids:
+      - 1oxZ63Ly0jag  # 個別サポート_Kindle
+      - wAVunehfikDi  # アミ｜AI×Kindleを極めた主婦

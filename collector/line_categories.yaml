@@ -1,0 +1,11 @@
+# groups.yaml のグループ名 → ダッシュボードのカテゴリ対応
+#   self    : 自社集客アカウント
+#   student : 講座生アカウント
+#
+# groups.yaml にグループを追加したら、ここにも分類を追記する。
+# 未定義のグループは self 扱い（フォールバック）。
+
+categories:
+  bazz_lab: self
+  buzz_lab_kouzasei: student
+  kindle_kouza: student

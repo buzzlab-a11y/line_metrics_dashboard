@@ -1,0 +1,27 @@
+# Logs
+*.log
+npm-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor
+.vscode/*
+.idea
+.DS_Store
+*.sw?
+
+# Claude Code local config
+.claude/
+
+# Python / collector
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# secrets
+.env
+collector/.env

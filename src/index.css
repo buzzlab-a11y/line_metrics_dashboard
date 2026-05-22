@@ -1,0 +1,34 @@
+@import url('https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Roboto:wght@300;400;500;700&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Google Sans', 'Roboto', system-ui, -apple-system, sans-serif;
+  background: #f8f9fa;
+  color: #202124;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+#root { min-height: 100vh; }
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #dadce0; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #bdc1c6; }
+
+:focus-visible {
+  outline: 2px solid #1a73e8;
+  outline-offset: 2px;
+}
+
+button, a, input, textarea, select {
+  font-family: inherit;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s, color 0.15s;
+}
+
+button { cursor: pointer; }
+
+.recharts-tooltip-wrapper { filter: drop-shadow(0 2px 8px rgba(60,64,67,.25)); }

@@ -1,0 +1,58 @@
+# Buzz Lab 講座生 アフィリエイトセンター定義
+# インフラ1本化方針: 親LINE / 面談LINE は共通、講座生別識別はラベル運用で実現
+#
+# route の選択肢:
+#   via_parent_line     ... 自LINE → 親LINE → 共通面談LINE → 面談予約 → 成約 (5段階・標準)
+#   direct_to_interview ... 自LINE → 共通面談LINE → 面談予約 → 成約 (4段階・親LINEスキップ)
+#   own_line_labels     ... 自LINE 一本で全ステージをラベル計測 (4段階)
+#                           面談予約LINE側のアクションで自LINEのラベルを同期する運用。
+#                           labels.interview_inflow / interview_reserved / contracted は
+#                           「自LINE(own_line)」に付与されるラベル名を指す。
+#
+# 新規講座生追加時は kouzasei: 配下に1ブロック追加。
+# UTAGE 側で対応ラベル作成 + 自動付与アクション設定が必要。
+
+# --- 共通インフラ ---
+infra:
+  parent_line:
+    account_id: ZYufeFQ2qohJ
+    name: 個別サポートLINE_Buzz Lab
+  interview_line:
+    account_id: JUNgaSCmnXRv
+    name: Bazz Lab講座生サポート用
+
+# --- 講座生定義 ---
+kouzasei:
+  # イチ🐰 -- 自LINE一本で計測。面談予約LINE(個別サポート_Kindle)側のアクションで
+  #          イチ🐰LINE(vCIfPjnz1gQu)のラベルを同期する運用。
+  - id: ichi
+    display_name: イチ🐰
+    route: own_line_labels
+    own_line:
+      account_id: vCIfPjnz1gQu
+      name: イチ🐰｜AI漫画×Kindle資産化
+    funnel_tracking_name: イチ🐰
+    # 自LINE(vCIfPjnz1gQu)に付与されるラベル名（流入・予約）
+    labels:
+      interview_inflow: 面談LINE流入_イチ🐰
+      interview_reserved: 面談予約済_イチ🐰
+      contracted: 成約_イチ🐰
+    # 成約は「決済時シナリオ」登録者で計測（決済完了で登録される＝タップ過剰計上を防ぐ）
+    contracted_scenario_ids:
+      - Wm2SNz3WmpFv  # 決済時シナリオ配信
+
+  # テストA -- 親LINE経由の標準ルート（新規講座生サンプル）
+  - id: test_a
+    display_name: テストA
+    route: via_parent_line
+    own_line:
+      account_id:
+      name: テストA本人LINE（未開設）
+    funnel_tracking_name: テストA
+    labels:
+      parent_inflow: 講座生:テストA
+      interview_inflow: 講座生:テストA
+      interview_reserved: 面談予約済_講座生:テストA
+      contracted: 成約_講座生:テストA
+    tracking:
+      parent_inflow: kouzasei_test_a
