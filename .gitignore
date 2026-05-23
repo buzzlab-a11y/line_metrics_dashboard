@@ -25,3 +25,7 @@ venv/
 # secrets
 .env
 collector/.env
+
+# GitHub Actions cron（push に workflow スコープが必要なため一旦除外。
+# workflow スコープ付与後にこの行を消して `git add` すればOK）
+.github/workflows/collect.yml

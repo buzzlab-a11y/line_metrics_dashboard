@@ -82,6 +82,19 @@ create table line_funnel_snapshots (
 create index on line_funnel_snapshots (snapshot_date);
 
 -- ============================================================
+-- 5c. 流入経路（message_tracking_name 別の登録者数）
+--   どの投稿/媒体から登録したか。UTAGEが自動記録するtracking名を集計。
+-- ============================================================
+create table line_inflow_snapshots (
+  account_id    text not null references line_accounts(account_id) on delete cascade,
+  snapshot_date date not null,
+  tracking_name text not null,    -- message_tracking_name（空は '直接/不明'）
+  count         integer not null default 0,  -- 人数（common_reader_idで名寄せ）
+  primary key (account_id, snapshot_date, tracking_name)
+);
+create index on line_inflow_snapshots (snapshot_date);
+
+-- ============================================================
 -- 6. アクセス権限
 --   フロント（anon）: RLS 有効 + read 専用ポリシー（推奨パターン）
 --   collector（service_role）: RLS をバイパスして書込
@@ -95,7 +108,7 @@ declare t text;
 begin
   foreach t in array array[
     'line_accounts','line_daily_snapshots','line_label_snapshots',
-    'line_message_stats','line_funnel_snapshots'
+    'line_message_stats','line_funnel_snapshots','line_inflow_snapshots'
   ] loop
     execute format('alter table public.%I enable row level security;', t);
     execute format('drop policy if exists anon_read on public.%I;', t);

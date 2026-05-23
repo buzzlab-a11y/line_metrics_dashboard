@@ -3,7 +3,7 @@ import { Users, Filter, Send, GitBranch, RefreshCw } from 'lucide-react';
 import { G } from './styles/theme';
 import { useLineMetrics } from './hooks/useLineMetrics';
 import FriendsTrend from './components/FriendsTrend';
-import InflowByLabel from './components/InflowByLabel';
+import InflowBySource from './components/InflowBySource';
 import MessagePerformance from './components/MessagePerformance';
 import FunnelView from './components/FunnelView';
 
@@ -52,7 +52,7 @@ export default function App() {
     () => ({
       accounts: scopedAccounts,
       daily: data.daily.filter((r) => accountIds.has(r.account_id)),
-      labels: data.labels.filter((r) => accountIds.has(r.account_id)),
+      inflow: data.inflow.filter((r) => accountIds.has(r.account_id)),
       messages: data.messages.filter((r) => accountIds.has(r.account_id)),
       funnel: data.funnel, // ファネルは講座生固定（kouzasei.yaml ベース）
     }),
@@ -202,7 +202,7 @@ export default function App() {
       {!data.loading && !data.error && (
         <>
           {metric === 'friends' && <FriendsTrend daily={filtered.daily} accounts={filtered.accounts} />}
-          {metric === 'inflow' && <InflowByLabel labels={filtered.labels} accounts={filtered.accounts} />}
+          {metric === 'inflow' && <InflowBySource inflow={filtered.inflow} accounts={filtered.accounts} />}
           {metric === 'messages' && <MessagePerformance messages={filtered.messages} accounts={filtered.accounts} />}
           {metric === 'funnel' && (
             <FunnelView funnel={filtered.funnel} category={category} />

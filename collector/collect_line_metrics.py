@@ -106,7 +106,11 @@ def fetch_account_names(client: UtageClient) -> dict[str, str]:
 
 
 def collect_friends(client: UtageClient, account_id: str, skip_blocked: bool) -> dict:
-    """友だち数（meta.total）とブロック数を返す."""
+    """友だち数(meta.total)・ブロック数・流入経路(message_tracking_name別人数)を返す.
+
+    ブロック数と流入経路は全 readers のページ取得が必要なため同じプルで両方算出する。
+    skip_blocked 時はこのプルを省略（ブロック数・流入経路は空）。
+    """
     readers_total = 0
     try:
         r = client.get(f"/accounts/{account_id}/readers", params={"per_page": 1})
@@ -115,16 +119,24 @@ def collect_friends(client: UtageClient, account_id: str, skip_blocked: bool) ->
         print(f"  ⚠️ readers total error ({account_id}): {e}", file=sys.stderr)
 
     blocked_count = 0
+    inflow: dict[str, set] = {}
     if not skip_blocked and readers_total > 0:
-        # 全 readers をページ取得して is_blocked を集計（重い）
         all_readers = funnel.fetch_all_readers(client, account_id)
         blocked_count = sum(1 for r in all_readers if r.get("is_blocked"))
+        # 流入経路: message_tracking_name 別に common_reader_id で名寄せ
+        for rd in all_readers:
+            crid = rd.get("common_reader_id")
+            if not crid:
+                continue
+            name = (rd.get("message_tracking_name") or "").strip() or "直接/不明"
+            inflow.setdefault(name, set()).add(crid)
 
     active_count = max(readers_total - blocked_count, 0)
     return {
         "readers_total": readers_total,
         "blocked_count": blocked_count,
         "active_count": active_count,
+        "inflow": {name: len(ids) for name, ids in inflow.items()},
     }
 
 
@@ -228,6 +240,7 @@ def upsert_to_supabase(payload: dict) -> None:
     _upsert("line_label_snapshots", payload["line_label_snapshots"])
     _upsert("line_message_stats", payload["line_message_stats"])
     _upsert("line_funnel_snapshots", payload["line_funnel_snapshots"])
+    _upsert("line_inflow_snapshots", payload["line_inflow_snapshots"])
 
 
 # ---------- main ----------
@@ -261,6 +274,7 @@ def main() -> int:
     daily: list[dict] = []
     label_rows: list[dict] = []
     message_rows: list[dict] = []
+    inflow_rows: list[dict] = []
 
     for a in accounts:
         aid = a["account_id"]
@@ -278,8 +292,25 @@ def main() -> int:
         )
 
         friends = collect_friends(client, aid, args.skip_blocked)
-        daily.append({"account_id": aid, "snapshot_date": snapshot_date, **friends})
-        print(f"  友だち {friends['readers_total']} / ブロック {friends['blocked_count']}")
+        daily.append(
+            {
+                "account_id": aid,
+                "snapshot_date": snapshot_date,
+                "readers_total": friends["readers_total"],
+                "blocked_count": friends["blocked_count"],
+                "active_count": friends["active_count"],
+            }
+        )
+        for tracking_name, cnt in friends["inflow"].items():
+            inflow_rows.append(
+                {
+                    "account_id": aid,
+                    "snapshot_date": snapshot_date,
+                    "tracking_name": tracking_name,
+                    "count": cnt,
+                }
+            )
+        print(f"  友だち {friends['readers_total']} / ブロック {friends['blocked_count']} / 流入経路 {len(friends['inflow'])}種")
 
         label_rows.extend(collect_labels(client, aid, snapshot_date))
 
@@ -300,6 +331,7 @@ def main() -> int:
         "line_label_snapshots": label_rows,
         "line_message_stats": message_rows,
         "line_funnel_snapshots": funnel_rows,
+        "line_inflow_snapshots": inflow_rows,
     }
 
     if args.dry_run:

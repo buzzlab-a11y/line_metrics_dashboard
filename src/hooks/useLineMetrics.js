@@ -25,19 +25,21 @@ export function useLineMetrics() {
     labels: [],
     messages: [],
     funnel: [],
+    inflow: [],
   });
 
   async function load() {
     setState((s) => ({ ...s, loading: true, error: null }));
     try {
-      const [accounts, daily, labels, messages, funnel] = await Promise.all([
+      const [accounts, daily, labels, messages, funnel, inflow] = await Promise.all([
         fetchAll('line_accounts', { col: 'sort_order' }),
         fetchAll('line_daily_snapshots', { col: 'snapshot_date' }),
         fetchAll('line_label_snapshots', { col: 'snapshot_date' }),
         fetchAll('line_message_stats', { col: 'snapshot_date' }),
         fetchAll('line_funnel_snapshots', { col: 'snapshot_date' }),
+        fetchAll('line_inflow_snapshots', { col: 'snapshot_date' }),
       ]);
-      setState({ loading: false, error: null, accounts, daily, labels, messages, funnel });
+      setState({ loading: false, error: null, accounts, daily, labels, messages, funnel, inflow });
     } catch (e) {
       setState((s) => ({ ...s, loading: false, error: e.message || String(e) }));
     }
