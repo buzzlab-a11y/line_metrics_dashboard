@@ -27,4 +27,5 @@ jobs:
           UTAGE_API_KEY: ${{ secrets.UTAGE_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          DISCORD_WEBHOOK_URL_LINE: ${{ secrets.DISCORD_WEBHOOK_URL_LINE }}
         run: python collect_line_metrics.py
