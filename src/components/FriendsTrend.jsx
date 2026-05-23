@@ -95,10 +95,8 @@ export default function FriendsTrend({ daily, accounts }) {
       const cur = daily.find((r) => r.snapshot_date === last && r.account_id === a.account_id);
       const pre = prev ? daily.find((r) => r.snapshot_date === prev && r.account_id === a.account_id) : null;
       const total = cur?.readers_total ?? 0;
-      const blocked = cur?.blocked_count ?? 0;
       const newCount = pre ? total - (pre.readers_total ?? 0) : null;
-      const blockRate = total ? ((blocked / total) * 100).toFixed(1) : '0.0';
-      return { name: a.name, total, blocked, newCount, blockRate };
+      return { name: a.name, total, newCount };
     });
   }, [accounts, daily, last, prev]);
 
@@ -122,7 +120,7 @@ export default function FriendsTrend({ daily, accounts }) {
           </ComposedChart>
         </ResponsiveContainer>
         <p style={{ fontSize: 11.5, color: G.text3, marginTop: 8 }}>
-          ※ 友だち数（累積）と新規は読者の登録日から過去復元。ブロック数は本日以降の実測のみ（下のカード参照）。
+          ※ 友だち数（累積）と新規は読者の登録日から過去復元。
         </p>
       </Card>
 
@@ -149,7 +147,6 @@ export default function FriendsTrend({ daily, accounts }) {
               <span style={{ color: G.success }}>
                 新規 {c.newCount === null ? '—' : c.newCount >= 0 ? `+${c.newCount}` : c.newCount}
               </span>
-              <span style={{ color: G.error }}>ブロック {c.blockRate}%</span>
             </div>
           </div>
         ))}
