@@ -37,6 +37,7 @@ from utage_client import (
     load_groups_config,
 )
 import funnel
+import discord_report
 
 CATEGORIES_PATH = PROJECT_ROOT / "line_categories.yaml"
 READER_PER_PAGE = 100
@@ -122,32 +123,51 @@ def fetch_account_names(client: UtageClient) -> dict[str, str]:
 
 
 def collect_friends(client: UtageClient, account_id: str, skip_blocked: bool) -> dict:
-    """友だち数(meta.total)・ブロック数・流入経路(message_tracking_name別人数)を返す.
+    """友だち数(common_reader_id で名寄せした実人数)・ブロック数・流入経路を返す.
 
-    ブロック数と流入経路は全 readers のページ取得が必要なため同じプルで両方算出する。
-    skip_blocked 時はこのプルを省略（ブロック数・流入経路は空）。
+    UTAGE /readers は1人が複数シナリオ行を持つため meta.total は「人数」でなく「行数」。
+    全 readers を取得し common_reader_id で名寄せして実人数を出す。
+    - readers_total: 名寄せ後のユニーク人数（ブロック中も含む友だち累計）
+    - active_count : いずれかの行が非ブロックの人数（有効友だち）
+    - blocked_count: 全シナリオ行でブロック中の人数（= readers_total - active_count）
+    skip_blocked=True 時は全件取得を省略し meta.total(行数・不正確)へフォールバックする。
     """
-    readers_total = 0
+    if skip_blocked:
+        # 軽量パス: 行数のみ（名寄せ不可・不正確。ローカル高速確認用）
+        readers_total = 0
+        try:
+            r = client.get(f"/accounts/{account_id}/readers", params={"per_page": 1})
+            readers_total = r.get("meta", {}).get("total", 0) or 0
+        except UtageAPIError as e:
+            print(f"  ⚠️ readers total error ({account_id}): {e}", file=sys.stderr)
+        return {
+            "readers_total": readers_total,
+            "blocked_count": 0,
+            "active_count": readers_total,
+            "inflow": {},
+        }
+
     try:
-        r = client.get(f"/accounts/{account_id}/readers", params={"per_page": 1})
-        readers_total = r.get("meta", {}).get("total", 0) or 0
-    except UtageAPIError as e:
-        print(f"  ⚠️ readers total error ({account_id}): {e}", file=sys.stderr)
-
-    blocked_count = 0
-    inflow: dict[str, set] = {}
-    if not skip_blocked and readers_total > 0:
         all_readers = funnel.fetch_all_readers(client, account_id)
-        blocked_count = sum(1 for r in all_readers if r.get("is_blocked"))
-        # 流入経路: message_tracking_name 別に common_reader_id で名寄せ
-        for rd in all_readers:
-            crid = rd.get("common_reader_id")
-            if not crid:
-                continue
-            name = (rd.get("message_tracking_name") or "").strip() or "直接/不明"
-            inflow.setdefault(name, set()).add(crid)
+    except UtageAPIError as e:
+        print(f"  ⚠️ readers fetch error ({account_id}): {e}", file=sys.stderr)
+        all_readers = []
 
-    active_count = max(readers_total - blocked_count, 0)
+    # 人(common_reader_id)ごとに全行の is_blocked を集約。crid 欠落時は id で代替
+    blocked_by_person: dict[str, list[int]] = {}
+    inflow: dict[str, set] = {}
+    for rd in all_readers:
+        crid = rd.get("common_reader_id") or rd.get("id")
+        if not crid:
+            continue
+        blocked_by_person.setdefault(crid, []).append(int(rd.get("is_blocked") or 0))
+        # 流入経路: message_tracking_name 別に名寄せ
+        name = (rd.get("message_tracking_name") or "").strip() or "直接/不明"
+        inflow.setdefault(name, set()).add(crid)
+
+    readers_total = len(blocked_by_person)
+    active_count = sum(1 for flags in blocked_by_person.values() if any(b == 0 for b in flags))
+    blocked_count = readers_total - active_count
     return {
         "readers_total": readers_total,
         "blocked_count": blocked_count,
@@ -341,7 +361,8 @@ def main() -> int:
     parser.add_argument("--skip-messages", action="store_true", help="配信統計収集をスキップ")
     args = parser.parse_args()
 
-    snapshot_date = date.today().isoformat()
+    today = date.today()
+    snapshot_date = today.isoformat()
 
     try:
         client = UtageClient()
@@ -349,84 +370,92 @@ def main() -> int:
         print(f"設定エラー: {e}", file=sys.stderr)
         return 2
 
-    groups = load_groups_config()["groups"]
-    categories, overrides = load_categories()
-    seed_map = {a["account_id"]: a for a in build_account_index(groups, categories, overrides)}
-    names = fetch_account_names(client)  # UTAGE全アカウント（id→name）
+    try:
+        groups = load_groups_config()["groups"]
+        categories, overrides = load_categories()
+        seed_map = {a["account_id"]: a for a in build_account_index(groups, categories, overrides)}
+        names = fetch_account_names(client)  # UTAGE全アカウント（id→name）
 
-    # 既存 line_accounts を読んで「分類・追跡フラグ」を保持しつつ、新規アカウントを検出
-    existing = read_existing_accounts()
-    line_accounts, use_db = sync_account_master(names, seed_map, existing, overrides)
-    tracked_rows = [r for r in line_accounts if r["tracked"]]
-    print(
-        f"検出 {len(line_accounts)} アカウント / 追跡(tracked) {len(tracked_rows)} 件"
-        f"{'（DB未読→groups.yamlスコープ）' if not use_db else ''}\n"
-    )
-
-    daily: list[dict] = []
-    label_rows: list[dict] = []
-    message_rows: list[dict] = []
-    inflow_rows: list[dict] = []
-
-    # 計測は tracked=true のアカウントのみ
-    for a in tracked_rows:
-        aid = a["account_id"]
-        name = a["name"]
-        print(f"▶ {name} ({aid}) [{a['category']}]", flush=True)
-
-        friends = collect_friends(client, aid, args.skip_blocked)
-        daily.append(
-            {
-                "account_id": aid,
-                "snapshot_date": snapshot_date,
-                "readers_total": friends["readers_total"],
-                "blocked_count": friends["blocked_count"],
-                "active_count": friends["active_count"],
-            }
+        # 既存 line_accounts を読んで「分類・追跡フラグ」を保持しつつ、新規アカウントを検出
+        existing = read_existing_accounts()
+        line_accounts, use_db = sync_account_master(names, seed_map, existing, overrides)
+        tracked_rows = [r for r in line_accounts if r["tracked"]]
+        print(
+            f"検出 {len(line_accounts)} アカウント / 追跡(tracked) {len(tracked_rows)} 件"
+            f"{'（DB未読→groups.yamlスコープ）' if not use_db else ''}\n"
         )
-        for tracking_name, cnt in friends["inflow"].items():
-            inflow_rows.append(
+
+        daily: list[dict] = []
+        label_rows: list[dict] = []
+        message_rows: list[dict] = []
+        inflow_rows: list[dict] = []
+
+        # 計測は tracked=true のアカウントのみ
+        for a in tracked_rows:
+            aid = a["account_id"]
+            name = a["name"]
+            print(f"▶ {name} ({aid}) [{a['category']}]", flush=True)
+
+            friends = collect_friends(client, aid, args.skip_blocked)
+            daily.append(
                 {
                     "account_id": aid,
                     "snapshot_date": snapshot_date,
-                    "tracking_name": tracking_name,
-                    "count": cnt,
+                    "readers_total": friends["readers_total"],
+                    "blocked_count": friends["blocked_count"],
+                    "active_count": friends["active_count"],
                 }
             )
-        print(f"  友だち {friends['readers_total']} / ブロック {friends['blocked_count']} / 流入経路 {len(friends['inflow'])}種")
+            for tracking_name, cnt in friends["inflow"].items():
+                inflow_rows.append(
+                    {
+                        "account_id": aid,
+                        "snapshot_date": snapshot_date,
+                        "tracking_name": tracking_name,
+                        "count": cnt,
+                    }
+                )
+            print(f"  友だち {friends['readers_total']} / ブロック {friends['blocked_count']} / 流入経路 {len(friends['inflow'])}種")
 
-        label_rows.extend(collect_labels(client, aid, snapshot_date))
+            label_rows.extend(collect_labels(client, aid, snapshot_date))
 
-        if not args.skip_messages:
-            stats = collect_message_stats(client, aid, snapshot_date)
-            message_rows.extend(stats)
-            print(f"  ラベル / 配信メッセージ {len(stats)} 件")
+            if not args.skip_messages:
+                stats = collect_message_stats(client, aid, snapshot_date)
+                message_rows.extend(stats)
+                print(f"  ラベル / 配信メッセージ {len(stats)} 件")
 
-    # 講座生ファネル（kouzasei.yaml ベース・共通インフラを1回だけ集計）
-    print("\n=== 講座生ファネル集計 ===")
-    funnel_config = funnel.load_config()
-    funnel_rows = funnel.compute_funnel_records(client, funnel_config, snapshot_date)
+        # 講座生ファネル（kouzasei.yaml ベース・共通インフラを1回だけ集計）
+        print("\n=== 講座生ファネル集計 ===")
+        funnel_config = funnel.load_config()
+        funnel_rows = funnel.compute_funnel_records(client, funnel_config, snapshot_date)
 
-    payload = {
-        "snapshot_date": snapshot_date,
-        "line_accounts": line_accounts,
-        "line_daily_snapshots": daily,
-        "line_label_snapshots": label_rows,
-        "line_message_stats": message_rows,
-        "line_funnel_snapshots": funnel_rows,
-        "line_inflow_snapshots": inflow_rows,
-    }
+        payload = {
+            "snapshot_date": snapshot_date,
+            "line_accounts": line_accounts,
+            "line_daily_snapshots": daily,
+            "line_label_snapshots": label_rows,
+            "line_message_stats": message_rows,
+            "line_funnel_snapshots": funnel_rows,
+            "line_inflow_snapshots": inflow_rows,
+        }
 
-    if args.dry_run:
-        print("\n=== DRY RUN（Supabaseへは書込みません） ===")
-        json.dump(payload, sys.stdout, ensure_ascii=False, indent=2)
-        print()
+        if args.dry_run:
+            print("\n=== DRY RUN（Supabaseへは書込みません） ===")
+            json.dump(payload, sys.stdout, ensure_ascii=False, indent=2)
+            print()
+            return 0
+
+        print("\n=== Supabase へ upsert ===")
+        upsert_to_supabase(payload)
+        print("✅ 完了")
+        # 集計成功 → self合計の友だち追加数を Discord へ
+        discord_report.send_daily_report(client=client, today=today)
         return 0
-
-    print("\n=== Supabase へ upsert ===")
-    upsert_to_supabase(payload)
-    print("✅ 完了")
-    return 0
+    except Exception as e:
+        print(f"⚠️ 集計失敗: {e}", file=sys.stderr)
+        if not args.dry_run:
+            discord_report.send_error_report(e, today=today)
+        return 1
 
 
 if __name__ == "__main__":
