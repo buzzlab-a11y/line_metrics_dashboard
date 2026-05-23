@@ -45,34 +45,50 @@ READER_PER_PAGE = 100
 # ---------- 設定読み込み ----------
 
 
-def load_categories() -> dict[str, str]:
-    """line_categories.yaml の categories: ブロックを {group_name: category} で返す."""
+def load_categories() -> tuple[dict[str, str], dict[str, str]]:
+    """line_categories.yaml を読み (group→category, account_id→category上書き) を返す.
+
+    categories:        グループ単位の分類
+    account_overrides: 個別アカウントの上書き（グループ分類より優先）
+    """
+    group_cats: dict[str, str] = {}
+    overrides: dict[str, str] = {}
     if not CATEGORIES_PATH.exists():
-        return {}
-    out: dict[str, str] = {}
-    in_block = False
+        return group_cats, overrides
+    block: str | None = None
     for raw in CATEGORIES_PATH.read_text(encoding="utf-8").splitlines():
         line = re.sub(r"\s+#.*$", "", raw).rstrip()
         if not line.strip() or line.lstrip().startswith("#"):
             continue
         if re.match(r"^categories:\s*$", line):
-            in_block = True
+            block = "categories"
             continue
-        if not in_block:
+        if re.match(r"^account_overrides:\s*$", line):
+            block = "overrides"
             continue
         m = re.match(r"^\s+([A-Za-z0-9_]+):\s*(\w+)\s*$", line)
-        if m:
-            out[m.group(1)] = m.group(2)
-    return out
+        if not m:
+            continue
+        if block == "categories":
+            group_cats[m.group(1)] = m.group(2)
+        elif block == "overrides":
+            overrides[m.group(1)] = m.group(2)
+    return group_cats, overrides
 
 
-def build_account_index(groups: dict, categories: dict[str, str]) -> list[dict]:
-    """groups.yaml の各アカウントに group_name / category / sort_order を付与したリストを返す."""
+def build_account_index(
+    groups: dict, categories: dict[str, str], overrides: dict[str, str] | None = None
+) -> list[dict]:
+    """各アカウントに group_name / category / sort_order を付与したリストを返す.
+
+    category は account_overrides（個別指定）> グループ分類 > 'self' の優先順。
+    """
+    overrides = overrides or {}
     accounts: list[dict] = []
     order = 0
     for group_name, g in groups.items():
-        category = categories.get(group_name, "self")
         for account_id in g.get("account_ids", []):
+            category = overrides.get(account_id, categories.get(group_name, "self"))
             accounts.append(
                 {
                     "account_id": account_id,
@@ -262,8 +278,8 @@ def main() -> int:
         return 2
 
     groups = load_groups_config()["groups"]
-    categories = load_categories()
-    accounts = build_account_index(groups, categories)
+    categories, overrides = load_categories()
+    accounts = build_account_index(groups, categories, overrides)
     names = fetch_account_names(client)
 
     self_n = sum(1 for a in accounts if a["category"] == "self")

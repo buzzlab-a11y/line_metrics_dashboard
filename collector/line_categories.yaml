@@ -9,3 +9,8 @@ categories:
   bazz_lab: self
   buzz_lab_kouzasei: student
   kindle_kouza: student
+
+# 個別アカウントの上書き（グループ分類より優先）。account_id 単位。
+account_overrides:
+  wAVunehfikDi: self      # アミ（kindle_kouzaグループだが自社アカウント扱い）
+  JFxp3h8tIYlD: student   # おリュウ（bazz_labグループだが講座生扱い）
