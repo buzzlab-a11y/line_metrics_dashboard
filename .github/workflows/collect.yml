@@ -1,0 +1,30 @@
+name: Collect LINE Metrics
+
+on:
+  schedule:
+    - cron: '0 0 * * *'   # 毎日 00:00 UTC = 09:00 JST
+  workflow_dispatch:
+
+jobs:
+  collect:
+    name: Snapshot UTAGE to Supabase
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    defaults:
+      run:
+        working-directory: collector
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: collector/requirements.txt
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run collector
+        env:
+          UTAGE_API_KEY: ${{ secrets.UTAGE_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python collect_line_metrics.py
