@@ -232,6 +232,78 @@ def collect_message_stats(client: UtageClient, account_id: str, snapshot_date: s
 # ---------- Supabase 投入 ----------
 
 
+def read_existing_accounts() -> dict[str, dict] | None:
+    """Supabase の line_accounts を {account_id: row} で返す。
+
+    分類(category)・追跡(tracked)・並び(sort_order)は管理画面で編集されるため、
+    collector はこれを読んで「既存行は保持」する。読めなければ None（groups.yamlにフォールバック）。
+    """
+    try:
+        from supabase import create_client
+
+        url = os.environ.get("SUPABASE_URL")
+        key = os.environ.get("SUPABASE_SERVICE_KEY")
+        if not url or not key:
+            return None
+        sb = create_client(url, key)
+        res = (
+            sb.table("line_accounts")
+            .select("account_id,name,category,group_name,tracked,sort_order")
+            .execute()
+        )
+        return {r["account_id"]: r for r in (res.data or [])}
+    except Exception as e:  # 列未追加・接続不可など
+        print(f"⚠️ line_accounts read 失敗（groups.yamlにフォールバック）: {e}", file=sys.stderr)
+        return None
+
+
+def sync_account_master(
+    names: dict[str, str], seed_map: dict[str, dict], existing: dict | None, overrides: dict[str, str]
+) -> tuple[list[dict], bool]:
+    """UTAGE全アカウントを line_accounts 行へ同期。既存は category/tracked を保持、新規は追加。
+
+    Returns: (account_rows, use_db)。use_db=False は DB未読（dry-run/未移行）でgroups.yamlスコープ。
+    """
+    use_db = existing is not None
+    existing = existing or {}
+    orders = [e.get("sort_order", 0) for e in existing.values()]
+    next_order = (max(orders) + 1) if orders else 0
+
+    rows: list[dict] = []
+    for aid, name in names.items():
+        if aid in existing:
+            e = existing[aid]
+            rows.append({
+                "account_id": aid,
+                "name": name,
+                "category": e.get("category") or "self",
+                "group_name": e.get("group_name") or "",
+                "tracked": bool(e.get("tracked")),
+                "sort_order": e.get("sort_order", 0),
+            })
+        elif aid in seed_map:
+            s = seed_map[aid]
+            rows.append({
+                "account_id": aid,
+                "name": name,
+                "category": s["category"],
+                "group_name": s["group_name"],
+                "tracked": (not use_db),  # DB未読(オフラインdry-run)は従来通り追跡、DBありなら新規はfalse
+                "sort_order": s["sort_order"],
+            })
+        else:
+            rows.append({
+                "account_id": aid,
+                "name": name,
+                "category": overrides.get(aid, "self"),
+                "group_name": "",
+                "tracked": False,
+                "sort_order": next_order,
+            })
+            next_order += 1
+    return rows, use_db
+
+
 def upsert_to_supabase(payload: dict) -> None:
     """各テーブルへ upsert。supabase-py を遅延 import（dry-run 時は不要）."""
     from supabase import create_client
@@ -279,33 +351,28 @@ def main() -> int:
 
     groups = load_groups_config()["groups"]
     categories, overrides = load_categories()
-    accounts = build_account_index(groups, categories, overrides)
-    names = fetch_account_names(client)
+    seed_map = {a["account_id"]: a for a in build_account_index(groups, categories, overrides)}
+    names = fetch_account_names(client)  # UTAGE全アカウント（id→name）
 
-    self_n = sum(1 for a in accounts if a["category"] == "self")
-    student_n = sum(1 for a in accounts if a["category"] == "student")
-    print(f"対象アカウント: {len(accounts)} 件（self={self_n} / student={student_n}）\n")
+    # 既存 line_accounts を読んで「分類・追跡フラグ」を保持しつつ、新規アカウントを検出
+    existing = read_existing_accounts()
+    line_accounts, use_db = sync_account_master(names, seed_map, existing, overrides)
+    tracked_rows = [r for r in line_accounts if r["tracked"]]
+    print(
+        f"検出 {len(line_accounts)} アカウント / 追跡(tracked) {len(tracked_rows)} 件"
+        f"{'（DB未読→groups.yamlスコープ）' if not use_db else ''}\n"
+    )
 
-    line_accounts: list[dict] = []
     daily: list[dict] = []
     label_rows: list[dict] = []
     message_rows: list[dict] = []
     inflow_rows: list[dict] = []
 
-    for a in accounts:
+    # 計測は tracked=true のアカウントのみ
+    for a in tracked_rows:
         aid = a["account_id"]
-        name = names.get(aid, aid)
+        name = a["name"]
         print(f"▶ {name} ({aid}) [{a['category']}]", flush=True)
-
-        line_accounts.append(
-            {
-                "account_id": aid,
-                "name": name,
-                "category": a["category"],
-                "group_name": a["group_name"],
-                "sort_order": a["sort_order"],
-            }
-        )
 
         friends = collect_friends(client, aid, args.skip_blocked)
         daily.append(

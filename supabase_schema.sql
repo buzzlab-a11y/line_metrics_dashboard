@@ -20,6 +20,7 @@ create table line_accounts (
   name       text    not null,
   category   text    not null,           -- 'self'（自社集客）| 'student'（講座生）
   group_name text    not null,           -- 'bazz_lab' | 'buzz_lab_kouzasei' | 'kindle_kouza'
+  tracked    boolean not null default false,  -- ダッシュボードで集計対象にするか（管理画面でON/OFF）
   sort_order integer not null default 0,
   updated_at timestamptz not null default now()
 );

@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react';
-import { Users, Filter, Send, GitBranch, RefreshCw } from 'lucide-react';
+import { Users, Filter, Send, GitBranch, RefreshCw, Settings, ArrowLeft } from 'lucide-react';
 import { G } from './styles/theme';
 import { useLineMetrics } from './hooks/useLineMetrics';
 import FriendsTrend from './components/FriendsTrend';
 import InflowBySource from './components/InflowBySource';
 import MessagePerformance from './components/MessagePerformance';
 import FunnelView from './components/FunnelView';
+import AccountAdmin from './components/AccountAdmin';
 
 const CATEGORIES = [
   { id: 'self', label: '自社集客' },
@@ -24,9 +25,11 @@ export default function App() {
   const [category, setCategory] = useState('self');
   const [metric, setMetric] = useState('friends');
   const [accountId, setAccountId] = useState('all'); // 'all' | 個別 account_id
+  const [view, setView] = useState('dashboard'); // 'dashboard' | 'admin'
 
+  // メイン表示は tracked=true のアカウントのみ
   const accountsInCat = useMemo(
-    () => data.accounts.filter((a) => a.category === category),
+    () => data.accounts.filter((a) => a.category === category && a.tracked),
     [data.accounts, category]
   );
 
@@ -79,30 +82,44 @@ export default function App() {
             UTAGE 連携・日次スナップショット
           </p>
         </div>
-        <button
-          onClick={data.reload}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            background: G.surface,
-            border: `1px solid ${G.border}`,
-            borderRadius: G.radiusPill,
-            padding: '8px 16px',
-            color: G.text2,
-            fontSize: 13,
-            boxShadow: G.shadow1,
-          }}
-        >
-          <RefreshCw size={15} /> 更新
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            onClick={data.reload}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              background: G.surface, border: `1px solid ${G.border}`,
+              borderRadius: G.radiusPill, padding: '8px 16px',
+              color: G.text2, fontSize: 13, boxShadow: G.shadow1,
+            }}
+          >
+            <RefreshCw size={15} /> 更新
+          </button>
+          <button
+            onClick={() => setView(view === 'admin' ? 'dashboard' : 'admin')}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              background: view === 'admin' ? G.primaryContainer : G.surface,
+              border: `1px solid ${view === 'admin' ? G.primary : G.border}`,
+              borderRadius: G.radiusPill, padding: '8px 16px',
+              color: view === 'admin' ? G.primary : G.text2, fontSize: 13, boxShadow: G.shadow1,
+            }}
+          >
+            {view === 'admin' ? <ArrowLeft size={15} /> : <Settings size={15} />}
+            {view === 'admin' ? 'ダッシュへ戻る' : 'アカウント管理'}
+          </button>
+        </div>
       </header>
+
+      {view === 'admin' && <AccountAdmin accounts={data.accounts} onSaved={data.reload} />}
+      {view === 'dashboard' && (
+      <>
+      {/* === dashboard body === */}
 
       {/* カテゴリ切替（自社集客 / 講座生） */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
         {CATEGORIES.map((c) => {
           const active = category === c.id;
-          const count = data.accounts.filter((a) => a.category === c.id).length;
+          const count = data.accounts.filter((a) => a.category === c.id && a.tracked).length;
           return (
             <button
               key={c.id}
@@ -208,6 +225,8 @@ export default function App() {
             <FunnelView funnel={filtered.funnel} category={category} />
           )}
         </>
+      )}
+      </>
       )}
     </div>
   );
