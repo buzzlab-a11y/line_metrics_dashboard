@@ -23,23 +23,27 @@ infra:
 
 # --- 講座生定義 ---
 kouzasei:
-  # イチ🐰 -- 自LINE一本で計測。面談予約LINE(個別サポート_Kindle)側のアクションで
-  #          イチ🐰LINE(vCIfPjnz1gQu)のラベルを同期する運用。
+  # イチ🐰 -- 全ステージをシナリオ登録者で計測（ラベル不要・UTAGEが自動で進める）
   - id: ichi
     display_name: イチ🐰
-    route: own_line_labels
+    route: scenario_based
     own_line:
       account_id: vCIfPjnz1gQu
       name: イチ🐰｜AI漫画×Kindle資産化
+    # 面談予約LINE（流入・予約ステージのシナリオが所属するアカウント）
+    reservation_line:
+      account_id: 1oxZ63Ly0jag
+      name: 個別サポート_Kindle
     funnel_tracking_name: イチ🐰
-    # 自LINE(vCIfPjnz1gQu)に付与されるラベル名（流入・予約）
-    labels:
-      interview_inflow: 面談LINE流入_イチ🐰
-      interview_reserved: 面談予約済_イチ🐰
-      contracted: 成約_イチ🐰
-    # 成約は「決済時シナリオ」登録者で計測（決済完了で登録される＝タップ過剰計上を防ぐ）
+    # ②面談LINE流入 = reservation_line の「オファー_イチ🐰用」シナリオ登録者
+    inflow_scenario_ids:
+      - SgzK0NCGdk76
+    # ③面談予約済 = reservation_line の「予約時_イチ🐰用」シナリオ登録者
+    reserved_scenario_ids:
+      - 5ZYFOv14TOiI
+    # ④成約 = own_line の「決済時シナリオ配信」登録者（決済完了で登録）
     contracted_scenario_ids:
-      - Wm2SNz3WmpFv  # 決済時シナリオ配信
+      - Wm2SNz3WmpFv
 
   # テストA -- 親LINE経由の標準ルート（新規講座生サンプル）
   - id: test_a

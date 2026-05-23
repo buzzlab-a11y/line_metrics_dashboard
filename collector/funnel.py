@@ -38,6 +38,13 @@ ROUTE_STAGES: dict[str, list[dict]] = {
         {"key": "interview_reserved", "label": "③ 面談予約済"},
         {"key": "contracted", "label": "④ 成約"},
     ],
+    # 全ステージをシナリオ登録者で計測（ラベル不要）。
+    "scenario_based": [
+        {"key": "own_line", "label": "① 自LINE登録"},
+        {"key": "interview_inflow", "label": "② 面談LINE流入"},
+        {"key": "interview_reserved", "label": "③ 面談予約済"},
+        {"key": "contracted", "label": "④ 成約"},
+    ],
 }
 
 PAYMENT_KEYWORDS = ("決済", "成約", "購入", "purchase")
@@ -260,8 +267,9 @@ def compute_funnel_records(client: UtageClient, config: dict, snapshot_date: str
     parent_id = infra["parent_line"]["account_id"]
     interview_id = infra["interview_line"]["account_id"]
 
-    # 共通インフラ(親LINE/面談LINE)は own_line_labels 以外のルートがある時だけ取得
-    needs_infra = any(k.get("route") != "own_line_labels" for k in config["kouzasei"])
+    # 共通インフラ(親LINE/面談LINE)は via_parent_line / direct_to_interview ルートがある時だけ取得
+    _self_contained = ("own_line_labels", "scenario_based")
+    needs_infra = any(k.get("route") not in _self_contained for k in config["kouzasei"])
     parent_readers: list[dict] = []
     interview_readers: list[dict] = []
     payment_sc_parent: set[str] = set()
@@ -298,6 +306,44 @@ def compute_funnel_records(client: UtageClient, config: dict, snapshot_date: str
         labels = k.get("labels") or {}
         tracking = k.get("tracking") or {}
         funnel_tracking_name = (k.get("funnel_tracking_name") or "").strip()
+
+        # scenario_based: 各ステージを「シナリオ登録者(common_reader_idで名寄せ)」で計測。
+        #   流入/予約 = reservation_line のシナリオ、成約 = own_line の決済時シナリオ。
+        if route == "scenario_based":
+            res_line = k.get("reservation_line") or {}
+            res_id = res_line.get("account_id")
+            own_readers = fetch_all_readers(client, own_id) if own_open else []
+            res_readers = fetch_all_readers(client, res_id) if res_id else []
+
+            def _people_in_scenarios(readers: list[dict], scenario_ids) -> int:
+                sids = set(scenario_ids or [])
+                if not sids:
+                    return 0
+                return len({
+                    r.get("common_reader_id")
+                    for r in readers
+                    if r.get("common_reader_id") and r.get("scenario_id") in sids
+                })
+
+            counts = {
+                "own_line": own_total,
+                "interview_inflow": _people_in_scenarios(res_readers, k.get("inflow_scenario_ids")),
+                "interview_reserved": _people_in_scenarios(res_readers, k.get("reserved_scenario_ids")),
+                "contracted": _people_in_scenarios(own_readers, k.get("contracted_scenario_ids")),
+            }
+            for stage_def in ROUTE_STAGES[route]:
+                sk = stage_def["key"]
+                records.append(
+                    {
+                        "kouzasei_id": k.get("id"),
+                        "display_name": k.get("display_name"),
+                        "snapshot_date": snapshot_date,
+                        "stage": sk,
+                        "count": counts.get(sk, 0),
+                    }
+                )
+                print(f"  [{k.get('display_name')}] {stage_def['label']}: {counts.get(sk, 0)}")
+            continue
 
         # own_line_labels: 自LINE(own_line)で全ステージを計測。
         #   流入・予約 = 同期ラベル / 成約 = 決済時シナリオ登録（決済完了シグナル）
